@@ -782,6 +782,16 @@ input[type=color]::-webkit-color-swatch { border: 0; border-radius: 4px; }
     const json = JSON.stringify(state, null, 2);
     const filename = "task-calendar-" + todayYmd() + ".json";
     const dl = await downloadsP;
+    const insideClaude = !!(window.claude && typeof window.claude.use === "function");
+    if (!insideClaude) {
+      // Standalone copy (GitHub Pages, local file): an ordinary browser download.
+      const url = URL.createObjectURL(new Blob([json], { type: "application/json" }));
+      const a = el("a", { href: url, download: filename });
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      showToast("Exported " + filename);
+      return;
+    }
     if (dl) {
       try { await dl.save({ filename, data: json }); showToast("Exported " + filename); return; }
       catch (err) {

@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Task calendar</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%97%93%EF%B8%8F%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&display=swap" rel="stylesheet">
@@ -18,6 +19,8 @@
   --dawn: #FFF7E3;
   --dusk: #ECEAFA;
   --accent: #2D5BD7;
+  --weekend: #E6F1EC;
+  --weekend-ink: #2F7A57;
   --danger: #C23B3B;
   --shadow: 0 1px 2px rgba(20,30,45,.08), 0 4px 14px rgba(20,30,45,.08);
   color-scheme: light;
@@ -29,6 +32,7 @@
   :root:not([data-theme="light"]) {
     --bg: #151A21; --surface: #1E252E; --ink: #E4E9F0; --muted: #8E99A6; --line: #2E3743;
     --dawn: #2A2619; --dusk: #211F33; --accent: #85A2FF; --danger: #F07C7C;
+    --weekend: #1A2A24; --weekend-ink: #7CCBA2;
     --shadow: 0 1px 2px rgba(0,0,0,.4), 0 4px 14px rgba(0,0,0,.3);
     color-scheme: dark;
   }
@@ -36,6 +40,7 @@
 :root[data-theme="dark"] {
   --bg: #151A21; --surface: #1E252E; --ink: #E4E9F0; --muted: #8E99A6; --line: #2E3743;
   --dawn: #2A2619; --dusk: #211F33; --accent: #85A2FF; --danger: #F07C7C;
+    --weekend: #1A2A24; --weekend-ink: #7CCBA2;
   --shadow: 0 1px 2px rgba(0,0,0,.4), 0 4px 14px rgba(0,0,0,.3);
   color-scheme: dark;
 }
@@ -113,6 +118,11 @@ label.days select { border: 1px solid var(--line); background: var(--surface); b
 .day-name { font-weight: 600; }
 .day-month { color: var(--muted); }
 .day.today .day-num { color: var(--accent); }
+.day.weekend { background: var(--weekend); }
+.day.weekend .day-head { background: var(--weekend); }
+.day.weekend .slot.am { background: color-mix(in srgb, var(--dawn) 55%, var(--weekend)); }
+.day.weekend .slot.pm { background: color-mix(in srgb, var(--dusk) 55%, var(--weekend)); }
+.day.weekend .day-name { color: var(--weekend-ink); }
 .day.today { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .slot { display: flex; flex-direction: column; min-height: 0; }
 .slot.am { background: var(--dawn); border-bottom: 1px solid var(--line); }
@@ -404,7 +414,8 @@ input[type=color]::-webkit-color-swatch { border: 0; border-radius: 4px; }
     const today = todayYmd();
     for (let i = 0; i < n; i++) {
       const date = addDays(viewStart, i);
-      const col = el("section", { className: "day" + (date === today ? " today" : date < today ? " past" : "") });
+      const dow = parseYmd(date).getDay();
+      const col = el("section", { className: "day" + (date === today ? " today" : date < today ? " past" : "") + (dow === 0 || dow === 6 ? " weekend" : "") });
       col.setAttribute("aria-label", fmt(date, { weekday: "long", month: "long", day: "numeric" }));
       const head = el("div", { className: "day-head" });
       head.append(

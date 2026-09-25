@@ -83,16 +83,14 @@ label.days select { border: 1px solid var(--line); background: var(--surface); b
 .composer input[type=text] {
   width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--bg);
 }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.chip {
-  display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line);
-  background: var(--surface); border-radius: 999px; padding: 3px 10px 3px 7px; font-size: 13px;
-}
-.chip .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--c); }
-.chip[aria-pressed="true"] { border-color: var(--c); background: color-mix(in srgb, var(--c) 18%, var(--surface)); font-weight: 600; }
-.chip.new { color: var(--muted); padding-left: 10px; border-style: dashed; }
+.cat-trigger { display: inline-flex; align-items: center; gap: 8px; min-width: 0; max-width: 220px; }
+.cat-trigger .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--c); }
+.cat-trigger .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cat-trigger.empty { color: var(--muted); }
+.cat-trigger .caret { color: var(--muted); font-size: 11px; }
 .add-row { display: flex; gap: 8px; align-items: center; }
 .hint { font-size: 12.5px; color: var(--muted); }
+.add-row .btn.primary { margin-left: auto; }
 .tray-wrap { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .tray-wrap .hint { margin: 0; }
 .tray {
@@ -155,6 +153,29 @@ body.dragging .list, body.dragging .tray { outline: 1.5px dashed color-mix(in sr
 .ghost { opacity: .35; }
 .task.chosen { box-shadow: var(--shadow); }
 
+/* Category menu */
+.menu { width: 300px; }
+.menu > input[type=text] { width: 100%; border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; background: var(--bg); }
+.menu .items { max-height: 300px; overflow-y: auto; margin-top: 6px; display: flex; flex-direction: column; gap: 1px; }
+.catrow { --c: #888; display: flex; align-items: center; border-radius: 6px; }
+.catrow.hl { background: color-mix(in srgb, var(--c) 16%, var(--surface)); }
+.catrow .pick { flex: 1; min-width: 0; background: transparent !important; }
+.catrow .pick .label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.catrow .cur { color: var(--muted); font-size: 12px; }
+.catrow .pen { flex: none; border: 0; background: transparent; width: 26px; height: 26px; border-radius: 5px; color: var(--muted); opacity: 0; }
+.catrow:hover .pen, .catrow.hl .pen, .catrow .pen:focus-visible { opacity: 1; }
+.catrow .pen:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 10%, transparent); }
+.catrow.create { gap: 8px; padding: 4px 6px 4px 8px; }
+.catrow.create .pick { padding: 4px 2px; font-weight: 600; }
+.catedit { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px; border-radius: 8px; background: var(--bg); margin: 2px 0; }
+.catedit input[type=text] { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; background: var(--surface); }
+.catedit .foot { flex-basis: 100%; display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); }
+.catedit .foot .btn { padding: 3px 10px; font-size: 13px; }
+.catedit .foot .del { margin-left: auto; color: var(--danger); }
+.catedit .err { flex-basis: 100%; margin: 0; }
+.catedit .err:empty { display: none; }
+.menu .empty { padding: 8px 4px 4px; }
+
 /* Popover, modal, toast */
 .pop {
   position: fixed; z-index: 20; background: var(--surface); border: 1px solid var(--line);
@@ -208,7 +229,6 @@ input[type=color]::-webkit-color-swatch { border: 0; border-radius: 4px; }
     </label>
     <span class="notice" id="notice" hidden>Browser storage is unavailable here: export to keep your changes.</span>
     <span class="spacer"></span>
-    <button class="btn" id="manageCats">Categories</button>
     <button class="btn" id="importBtn">Import</button>
     <button class="btn" id="exportBtn">Export</button>
     <input type="file" id="importFile" accept=".json,application/json" hidden>
@@ -217,11 +237,11 @@ input[type=color]::-webkit-color-swatch { border: 0; border-radius: 4px; }
   <section class="composer" aria-label="New task">
     <div class="composer-left">
       <input type="text" id="desc" placeholder="What needs doing?" autocomplete="off" maxlength="300">
-      <div class="chips" id="catChips" role="group" aria-label="Category"></div>
       <div class="add-row">
+        <button class="btn cat-trigger" id="catBtn" type="button" aria-haspopup="listbox"></button>
         <button class="btn primary" id="addBtn" disabled>Add to tray</button>
-        <span class="hint" id="addHint">Type a description and pick a category.</span>
       </div>
+      <span class="hint" id="addHint"></span>
     </div>
     <div class="tray-wrap">
       <div class="tray" id="tray" aria-label="Unscheduled tasks"></div>
@@ -274,6 +294,10 @@ input[type=color]::-webkit-color-swatch { border: 0; border-radius: 4px; }
 
   const catById = (id) => state.categories.find((c) => c.id === id);
   const usage = (catId) => state.tasks.filter((t) => t.categoryId === catId).length;
+  const sortedCats = () => state.categories.slice().sort((a, b) =>
+    ((b.lastUsed || 0) - (a.lastUsed || 0)) || (state.categories.indexOf(a) - state.categories.indexOf(b)));
+  const touch = (c) => { if (c) c.lastUsed = Date.now(); };
+  const defaultCat = () => { const c = sortedCats()[0]; return c ? c.id : null; };
 
   // ---------- validation for import + stored data ----------
   function validate(obj) {
@@ -290,7 +314,7 @@ input[type=color]::-webkit-color-swatch { border: 0; border-radius: 4px; }
       if (typeof c.color !== "string" || !hex.test(c.color)) return fail("Category \"" + c.name + "\" needs a color like #3B7DD8.");
       if (ids.has(c.id)) return fail("Two categories share the id \"" + c.id + "\".");
       ids.add(c.id);
-      categories.push({ id: c.id, name: c.name.trim(), color: c.color });
+      categories.push({ id: c.id, name: c.name.trim(), color: c.color, lastUsed: Number.isFinite(c.lastUsed) ? c.lastUsed : 0 });
     }
     const tasks = [];
     for (const [i, t] of obj.tasks.entries()) {
@@ -319,7 +343,7 @@ input[type=color]::-webkit-color-swatch { border: 0; border-radius: 4px; }
     sortables.forEach((s) => s.destroy());
     sortables = [];
     renderToolbar();
-    renderChips();
+    renderCatTrigger();
     renderTray();
     renderCalendar();
     updateAddState();
@@ -336,22 +360,34 @@ input[type=color]::-webkit-color-swatch { border: 0; border-radius: 4px; }
     $("notice").hidden = storageOk;
   }
 
-  function renderChips() {
-    const box = $("catChips");
-    box.textContent = "";
+  function renderCatTrigger() {
+    const b = $("catBtn");
     if (selectedCat && !catById(selectedCat)) selectedCat = null;
-    for (const c of state.categories) {
-      const b = el("button", { className: "chip", type: "button" });
+    const c = catById(selectedCat);
+    b.textContent = "";
+    b.classList.toggle("empty", !c);
+    if (c) {
       b.style.setProperty("--c", c.color);
-      b.setAttribute("aria-pressed", String(c.id === selectedCat));
-      b.append(el("span", { className: "dot" }), document.createTextNode(c.name));
-      b.addEventListener("click", () => { selectedCat = selectedCat === c.id ? null : c.id; renderChips(); updateAddState(); $("desc").focus(); });
-      box.append(b);
+      b.append(el("span", { className: "dot" }), el("span", { className: "name", textContent: c.name }));
+      b.setAttribute("aria-label", "Category: " + c.name + ". Change category");
+    } else {
+      b.append(el("span", { className: "name", textContent: "Choose category" }));
+      b.setAttribute("aria-label", "Choose category");
     }
-    const nb = el("button", { className: "chip new", type: "button", textContent: "+ New category" });
-    nb.addEventListener("click", () => openNewCategoryPop(nb));
-    box.append(nb);
+    b.append(el("span", { className: "caret", textContent: "▾" }));
   }
+  function openCreationMenu(initial) {
+    openCategoryMenu($("catBtn"), {
+      currentId: selectedCat,
+      initial,
+      onPick: (c) => { selectedCat = c.id; renderCatTrigger(); updateAddState(); $("desc").focus(); },
+    });
+  }
+  $("catBtn").addEventListener("click", () => openCreationMenu(""));
+  $("catBtn").addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); openCreationMenu(""); }
+    else if (e.key.length === 1 && e.key !== " " && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); openCreationMenu(e.key); }
+  });
 
   function renderTray() {
     const tray = $("tray");
@@ -410,7 +446,10 @@ input[type=color]::-webkit-color-swatch { border: 0; border-radius: 4px; }
     const catBtn = el("button", { className: "tool", type: "button", title: "Change category (" + (cat ? cat.name : "none") + ")" });
     catBtn.setAttribute("aria-label", "Change category");
     catBtn.append(el("span", { className: "dot" }));
-    catBtn.addEventListener("click", () => openCategoryPicker(catBtn, t));
+    catBtn.addEventListener("click", () => openCategoryMenu(catBtn, {
+      currentId: t.categoryId,
+      onPick: (c) => { t.categoryId = c.id; touch(c); commit(); },
+    }));
     const del = el("button", { className: "tool", type: "button", textContent: "✕", title: "Delete task" });
     del.setAttribute("aria-label", "Delete task");
     del.addEventListener("click", () => deleteTask(t));
@@ -473,12 +512,13 @@ input[type=color]::-webkit-color-swatch { border: 0; border-radius: 4px; }
     const hasText = $("desc").value.trim().length > 0;
     const ready = hasText && !!selectedCat;
     $("addBtn").disabled = !ready;
-    $("addHint").textContent = !state.categories.length ? "Create a category to get started."
-      : ready ? "Press Enter or click to add." : !hasText ? "Type a description." : "Pick a category.";
+    $("addHint").textContent = !state.categories.length ? "Type a task, then create its category from the category menu."
+      : ready ? "Press Enter to add to the tray." : !hasText ? "Type a description." : "Choose a category.";
   }
   function addTask() {
     const text = $("desc").value.replace(/\s+/g, " ").trim();
     if (!text || !selectedCat) return;
+    touch(catById(selectedCat));
     state.tasks.push({ id: uid("t"), text, categoryId: selectedCat, date: null, slot: null, done: false, created: Date.now() });
     $("desc").value = "";
     commit();
@@ -489,7 +529,7 @@ input[type=color]::-webkit-color-swatch { border: 0; border-radius: 4px; }
     if (e.key !== "Enter") return;
     e.preventDefault();
     if (selectedCat) addTask();
-    else { const first = $("catChips").querySelector(".chip"); if (first) first.focus(); }
+    else openCreationMenu("");
   });
   $("addBtn").addEventListener("click", addTask);
 
@@ -549,88 +589,138 @@ input[type=color]::-webkit-color-swatch { border: 0; border-radius: 4px; }
     const used = new Set(state.categories.map((c) => c.color.toLowerCase()));
     return PALETTE.find((c) => !used.has(c.toLowerCase())) || PALETTE[state.categories.length % PALETTE.length];
   }
-  function newCategoryForm(onCreated) {
-    const wrap = el("div");
-    const row = el("div", { className: "row" });
-    const color = el("input", { type: "color", value: nextColor() });
-    color.setAttribute("aria-label", "Color for new category");
-    const name = el("input", { type: "text", placeholder: "New category name", maxLength: 40 });
-    const add = el("button", { className: "btn", type: "button", textContent: "Create" });
-    const err = el("p", { className: "err" });
-    const create = () => {
-      const v = name.value.trim();
-      if (!v) { err.textContent = "Give the category a name."; name.focus(); return; }
-      if (state.categories.some((c) => c.name.toLowerCase() === v.toLowerCase())) { err.textContent = "A category with that name already exists."; name.focus(); return; }
-      const c = { id: uid("c"), name: v, color: color.value };
-      state.categories.push(c);
-      commit();
-      onCreated(c);
-    };
-    add.addEventListener("click", create);
-    name.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); create(); } });
-    row.append(color, name, add);
-    wrap.append(row, err);
-    return wrap;
-  }
-  function openNewCategoryPop(anchor) {
+  function openCategoryMenu(anchor, opts) {
+    let query = opts.initial || "";
+    let hl = 0;
+    let editingId = null;
+    let newColor = nextColor();
+    let entries = [];
     openPop(anchor, (pop) => {
-      pop.append(el("h2", { textContent: "New category" }), newCategoryForm((c) => {
-        selectedCat = c.id; closePop(); renderChips(); updateAddState(); $("desc").focus();
-      }));
-    });
-  }
+      pop.classList.add("menu");
+      const search = el("input", { type: "text", placeholder: "Search or create a category", value: query, maxLength: 40 });
+      search.setAttribute("aria-label", "Search or create a category");
+      search.setAttribute("autocomplete", "off");
+      const items = el("div", { className: "items", role: "listbox" });
+      pop.append(search, items);
 
-  function openCategoryManager(anchor) {
-    openPop(anchor, (pop) => {
-      pop.append(el("h2", { textContent: "Categories" }));
-      if (!state.categories.length) pop.append(el("p", { className: "empty", textContent: "No categories yet." }));
-      for (const c of state.categories) {
-        const row = el("div", { className: "row" });
+      const choose = (c) => { closePop(); opts.onPick(c); };
+      const refocus = () => { search.focus(); };
+      const applyHl = () => entries.forEach((e, i) => {
+        e.node.classList.toggle("hl", i === hl);
+        if (i === hl) e.node.scrollIntoView({ block: "nearest" });
+      });
+      const doCreate = () => {
+        const name = query.replace(/\s+/g, " ").trim();
+        if (!name || state.categories.some((c) => c.name.toLowerCase() === name.toLowerCase())) return;
+        const c = { id: uid("c"), name, color: newColor, lastUsed: Date.now() };
+        state.categories.push(c);
+        save();
+        choose(c);
+      };
+
+      function catRow(c) {
+        const row = el("div", { className: "catrow", role: "option" });
+        row.style.setProperty("--c", c.color);
+        const pick = el("button", { className: "pick", type: "button" });
+        pick.append(el("span", { className: "dot" }), el("span", { className: "label", textContent: c.name }));
+        if (c.id === opts.currentId) pick.append(el("span", { className: "cur", textContent: "✓ current" }));
+        pick.addEventListener("click", () => choose(c));
+        const pen = el("button", { className: "pen", type: "button", textContent: "✎", title: "Edit category" });
+        pen.setAttribute("aria-label", "Edit " + c.name);
+        pen.addEventListener("click", () => { editingId = c.id; draw(); });
+        row.append(pick, pen);
+        return row;
+      }
+
+      function editRow(c) {
+        const box = el("div", { className: "catedit" });
         const color = el("input", { type: "color", value: c.color });
-        color.setAttribute("aria-label", "Color for " + c.name);
-        color.addEventListener("change", () => { c.color = color.value; commit(); });
+        color.setAttribute("aria-label", "Color");
         const name = el("input", { type: "text", value: c.name, maxLength: 40 });
-        name.setAttribute("aria-label", "Name");
-        const rename = () => {
-          const v = name.value.trim();
-          const clash = state.categories.some((o) => o !== c && o.name.toLowerCase() === v.toLowerCase());
-          if (!v || clash) { name.value = c.name; return; }
-          if (v !== c.name) { c.name = v; commit(); }
-        };
-        name.addEventListener("change", rename);
-        name.addEventListener("keydown", (e) => { if (e.key === "Enter") name.blur(); });
+        name.setAttribute("aria-label", "Category name");
+        const err = el("p", { className: "err" });
+        const foot = el("div", { className: "foot" });
         const n = usage(c.id);
-        const count = el("span", { className: "count", textContent: n + (n === 1 ? " task" : " tasks") });
-        const x = el("button", { className: "x", type: "button", textContent: "✕", title: "Delete category" });
-        x.setAttribute("aria-label", "Delete category " + c.name);
-        x.hidden = n > 0;
-        x.addEventListener("click", () => {
-          state.categories = state.categories.filter((o) => o !== c);
-          commit();
-          openCategoryManager(anchor);
+        const saveBtn = el("button", { className: "btn primary", type: "button", textContent: "Save" });
+        const cancel = el("button", { className: "btn", type: "button", textContent: "Cancel" });
+        foot.append(saveBtn, cancel);
+        const stop = () => { editingId = null; draw(); refocus(); };
+        const doSave = () => {
+          const v = name.value.replace(/\s+/g, " ").trim();
+          if (!v) { err.textContent = "Give the category a name."; name.focus(); return; }
+          if (state.categories.some((o) => o !== c && o.name.toLowerCase() === v.toLowerCase())) { err.textContent = "Another category already has that name."; name.focus(); return; }
+          c.name = v; c.color = color.value;
+          commit(); stop();
+        };
+        if (n === 0) {
+          const del = el("button", { className: "btn del", type: "button", textContent: "Delete" });
+          del.addEventListener("click", () => {
+            state.categories = state.categories.filter((o) => o !== c);
+            if (selectedCat === c.id) selectedCat = null;
+            commit(); stop();
+          });
+          foot.append(del);
+        } else {
+          foot.append(el("span", { className: "del-note", textContent: "Used by " + n + (n === 1 ? " task" : " tasks") }));
+          foot.lastChild.style.marginLeft = "auto";
+        }
+        saveBtn.addEventListener("click", doSave);
+        cancel.addEventListener("click", stop);
+        box.addEventListener("keydown", (e) => {
+          if (e.key === "Escape") { e.stopPropagation(); stop(); }
+          if (e.key === "Enter" && e.target === name) { e.preventDefault(); doSave(); }
         });
-        row.append(color, name, count, x);
-        pop.append(row);
+        box.append(color, name, err, foot);
+        setTimeout(() => { name.focus(); name.select(); }, 0);
+        return box;
       }
-      pop.append(el("div", { className: "sep" }), newCategoryForm(() => openCategoryManager(anchor)));
-      if (state.categories.some((c) => usage(c.id) > 0)) {
-        pop.append(el("p", { className: "hint", textContent: "Categories in use can't be deleted." }));
-      }
-    });
-  }
-  $("manageCats").addEventListener("click", (e) => openCategoryManager(e.currentTarget));
 
-  function openCategoryPicker(anchor, t) {
-    openPop(anchor, (pop) => {
-      for (const c of state.categories) {
-        const b = el("button", { className: "pick", type: "button" });
-        b.style.setProperty("--c", c.color);
-        b.setAttribute("aria-current", String(c.id === t.categoryId));
-        b.append(el("span", { className: "dot" }), document.createTextNode(c.name));
-        b.addEventListener("click", () => { t.categoryId = c.id; closePop(); commit(); });
-        pop.append(b);
+      function draw() {
+        items.textContent = "";
+        entries = [];
+        const q = query.replace(/\s+/g, " ").trim().toLowerCase();
+        const cats = sortedCats().filter((c) => !q || c.name.toLowerCase().includes(q));
+        for (const c of cats) {
+          if (c.id === editingId) { items.append(editRow(c)); continue; }
+          const node = catRow(c);
+          const i = entries.length;
+          node.addEventListener("mouseenter", () => { hl = i; applyHl(); });
+          entries.push({ node, run: () => choose(c) });
+          items.append(node);
+        }
+        if (q && !editingId && !state.categories.some((c) => c.name.toLowerCase() === q)) {
+          const row = el("div", { className: "catrow create" });
+          row.style.setProperty("--c", newColor);
+          const color = el("input", { type: "color", value: newColor });
+          color.setAttribute("aria-label", "Color for new category");
+          color.addEventListener("input", () => { newColor = color.value; row.style.setProperty("--c", newColor); });
+          const b = el("button", { className: "pick", type: "button", textContent: "Create \u201c" + query.replace(/\s+/g, " ").trim() + "\u201d" });
+          b.addEventListener("click", doCreate);
+          row.append(color, b);
+          const i = entries.length;
+          row.addEventListener("mouseenter", () => { hl = i; applyHl(); });
+          entries.push({ node: row, run: doCreate });
+          items.append(row);
+        }
+        if (!entries.length && !editingId) {
+          items.append(el("p", { className: "empty hint", textContent: state.categories.length
+            ? "No categories match." : "Type a name to create your first category." }));
+        }
+        hl = Math.max(0, Math.min(hl, entries.length - 1));
+        applyHl();
       }
+
+      search.addEventListener("input", () => { query = search.value; hl = 0; editingId = null; draw(); });
+      search.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowDown") { e.preventDefault(); if (entries.length) { hl = (hl + 1) % entries.length; applyHl(); } }
+        else if (e.key === "ArrowUp") { e.preventDefault(); if (entries.length) { hl = (hl - 1 + entries.length) % entries.length; applyHl(); } }
+        else if (e.key === "Enter") { e.preventDefault(); if (entries[hl]) entries[hl].run(); }
+        else if (e.key === "Escape") { e.stopPropagation(); closePop(); if (anchor.isConnected) anchor.focus(); }
+      });
+      draw();
     });
+    const s = $("popRoot").querySelector(".menu > input");
+    if (s) { s.focus(); s.setSelectionRange(s.value.length, s.value.length); }
   }
 
   // ---------- modal ----------
@@ -721,7 +811,7 @@ input[type=color]::-webkit-color-swatch { border: 0; border-radius: 4px; }
       "Replace calendar", true);
     if (!ok) return;
     state = d;
-    selectedCat = null;
+    selectedCat = defaultCat();
     commit();
     showToast("Calendar imported");
   });
@@ -744,6 +834,7 @@ input[type=color]::-webkit-color-swatch { border: 0; border-radius: 4px; }
   function el(tag, props) { const n = document.createElement(tag); if (props) Object.assign(n, props); return n; }
 
   load();
+  selectedCat = defaultCat();
   renderAll();
   if (!window.Sortable) showToast("Drag and drop couldn't load. Check your connection and reload.");
 })();
